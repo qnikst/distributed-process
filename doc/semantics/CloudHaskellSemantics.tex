@@ -700,6 +700,21 @@ point of view, this would entail the use of a single ordered network connection
 for all messages from $P$ to $Q$, rather than using an ordered connection per
 typed channel plus one for direct messages.
 
+\subsection{Registry}
+
+For uniformity in Cloud Haskell can accept both local and remote processes
+names can be stored in Registry. Registering a local process at a remote
+node is suppoerted to using operation \texttt{registerRemoveAsync}.
+As a consequence, when a message is sent to a remote node using \texttt{nsendRemote}
+there is no guarantee that the process that should receive the message is
+located at node; thus it may be necessary to relay the message to a process
+on yet another node.
+
+Both `nsend` and `nsendRemote` operations are asynchronous that doesn't
+check existance of the target process, if process died then message will
+be silently discarded.
+
+
 \bibliographystyle{apalike}
 \bibliography{references}
 
