@@ -48,12 +48,12 @@ import qualified Data.Set as Set
   , member
   , toList
   )
-import Data.Foldable (forM_)
+import Data.Foldable (forM_, traverse_)
 import Data.Maybe (isJust, fromJust, isNothing, catMaybes)
 import Data.Typeable (Typeable)
 import Control.Category ((>>>))
 import Control.Applicative (Applicative, (<$>))
-import Control.Monad (void, when)
+import Control.Monad (void, when, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict (MonadState, StateT, evalStateT, gets)
 import qualified Control.Monad.State.Strict as StateT (get, put)
@@ -845,8 +845,15 @@ ncEffectRegister from label atnode mPid reregistration = do
      then do when (isOk) $
                do modify' $ registeredHereFor label ^= mPid
                   updateRemote node currentVal mPid
+                  traverse_ (\pid -> unless (isLocal node (ProcessIdentifier pid))
+                                            (forward node (NodeIdentifier $ localNodeId node)
+                                                          (processNodeId pid) (Link $ ProcessIdentifier pid)))
+                            currentVal
                   case mPid of
-                    (Just p) -> liftIO $ trace node (MxRegistered p label)
+                    (Just p) -> do unless (isLocal node (ProcessIdentifier p))
+                                          (forward node (NodeIdentifier $ localNodeId node)
+                                                        (processNodeId p) (Link $ ProcessIdentifier p))
+                                   liftIO $ trace node (MxRegistered p label)
                     Nothing  -> liftIO $ trace node (MxUnRegistered (fromJust currentVal) label)
              liftIO $ sendMessage node
                        (NodeIdentifier (localNodeId node))
@@ -861,12 +868,12 @@ ncEffectRegister from label atnode mPid reregistration = do
                 Nothing -> return ()
                 Just pid -> modify' $ registeredOnNodesFor pid ^: (maybeify $ operation atnode)
       where updateRemote node (Just oldval) (Just newval) | processNodeId oldval /= processNodeId newval =
-              do forward node (processNodeId oldval) (Register label atnode (Just oldval) True)
-                 forward node (processNodeId newval) (Register label atnode (Just newval) False)
+              do forward node (ProcessIdentifier from) (processNodeId oldval) (Register label atnode (Just oldval) True)
+                 forward node (ProcessIdentifier from) (processNodeId newval) (Register label atnode (Just newval) False)
             updateRemote node Nothing (Just newval) =
-                 forward node (processNodeId newval) (Register label atnode (Just newval) False)
+                 forward node (ProcessIdentifier from) (processNodeId newval) (Register label atnode (Just newval) False)
             updateRemote node (Just oldval) Nothing =
-                 forward node (processNodeId oldval) (Register label atnode (Just oldval) True)
+                 forward node (ProcessIdentifier from) (processNodeId oldval) (Register label atnode (Just oldval) True)
             updateRemote _ _ _ = return ()
             maybeify f Nothing = unmaybeify $ f []
             maybeify f (Just x) = unmaybeify $ f x
@@ -880,16 +887,17 @@ ncEffectRegister from label atnode mPid reregistration = do
             decList ((atag,1):xs) tag | atag == tag = xs
             decList ((atag,n):xs) tag | atag == tag = (atag,n-1):xs
             decList (x:xs) tag = x:decList xs tag
-            forward node to reg =
+            forward node from' to reg =
               when (not $ isLocal node (NodeIdentifier to)) $
                     liftIO $ sendBinary node
-                                        (ProcessIdentifier from)
+                                        from'
                                         (NodeIdentifier to)
                                         WithImplicitReconnect
                                         NCMsg
                                          { ctrlMsgSender = ProcessIdentifier from
                                          , ctrlMsgSignal = reg
                                          }
+
 
 
 -- Unified semantics does not explicitly describe 'whereis'
